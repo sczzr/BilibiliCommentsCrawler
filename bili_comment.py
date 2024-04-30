@@ -2,6 +2,7 @@ import requests
 import re
 import time
 import csv
+import os
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
@@ -53,18 +54,17 @@ def fetch_comment_replies(video_id, comment_id, parent_user_name, max_pages=1000
         time.sleep(1)
     return replies
 
-
-def fetch_comments(video_id, max_pages=1000):
-    comments = []
+def fetch_comment(video_id, video_name, max_pages=1000):
     last_count = 0
     for page in range(1, max_pages + 1):
+        print(f"正在抓取第{page}页评论...")
         url = f'https://api.bilibili.com/x/v2/reply?pn={page}&type=1&oid={video_id}&sort=2'
         try:
             # 添加超时设置
             response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                if data and 'replies' in data['data']:
+                if 'data' in data and 'replies' in data['data']:
                     for comment in data['data']['replies']:
                         comment_info = {
                             '用户昵称': comment['member']['uname'],
@@ -76,12 +76,10 @@ def fetch_comments(video_id, max_pages=1000):
                             '点赞数量': comment['like'],
                             '回复时间': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(comment['ctime']))
                         }
-                        comments.append(comment_info)
                         replies = fetch_comment_replies(video_id, comment['rpid'], comment['member']['uname'])
-                        comments.extend(replies)
-                if last_count == len(comments):
-                    break
-                last_count = len(comments)
+                        save_comment_to_csv(comment_info, video_name)
+                        for reply in replies:
+                            save_comment_to_csv(reply, video_name)
             else:
                 break
         except requests.RequestException as e:
@@ -89,19 +87,22 @@ def fetch_comments(video_id, max_pages=1000):
             break
         # 控制请求频率
         time.sleep(1)
-    return comments
 
 
-def save_comments_to_csv(comments, video_bv):
-    with open(f'./result/{video_bv}.csv', mode='w', encoding='utf-8',
-              newline='') as file:
-        writer = csv.DictWriter(file,
-                                fieldnames=['用户昵称', '性别', '评论内容', '被回复用户', '评论层级', '用户当前等级',
-                                            '点赞数量', '回复时间'])
-        writer.writeheader()
-        for comment in comments:
+def save_comment_to_csv(comment, video_bv):
+    file_path = f'./result/{video_bv}.csv'
+    if not os.path.isfile(file_path):
+        with open(file_path, mode='w', encoding='utf-8',newline='') as file:
+            writer = csv.DictWriter(file,
+                            fieldnames=['用户昵称', '性别', '评论内容', '被回复用户', '评论层级', '用户当前等级',
+                                        '点赞数量', '回复时间'])
+            writer.writeheader()
+    else:            
+        with open(file_path, mode='a', encoding='utf-8',newline='') as file:
+            writer = csv.DictWriter(file,
+                            fieldnames=['用户昵称', '性别', '评论内容', '被回复用户', '评论层级', '用户当前等级',
+                                        '点赞数量', '回复时间'])
             writer.writerow(comment)
-
 
 filename = './video_list.csv'
 
@@ -115,5 +116,4 @@ with open(filename, mode='r') as file:
         print(f'视频名字: {video_name}, video_bv: {video_bv}')
         aid = get_video_id(video_bv)
         video_id = aid
-        comments = fetch_comments(video_id)
-        save_comments_to_csv(comments, video_name)
+        fetch_comment(video_id, video_name)
